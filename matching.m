@@ -140,7 +140,8 @@ panoramaView = imref2d([height width], xLimits, yLimits);
 
 % Create the panorama.
 for i = 1:imageCount
-    I = single(imresize(imread(imagePaths{P(i)}),0.5));   
+    I = single(imread(imagePaths{P(i)}));
+    I = imresize(I,0.5);  
     % Transform I into the panorama.
     warpedImage = imwarp(I, tforms{P(i)}, 'OutputView', panoramaView);
     figure;
