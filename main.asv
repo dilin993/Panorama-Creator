@@ -44,17 +44,27 @@ for i=1:imageCount
     end
 end
 
-[P,d] = randomBestPath(E,5000);
+[P,d, centerIdx] = randomBestPath(E,5000);
 
 
 
 %% Section 3 - Calculate Image Transformations
-for i=1:numel(P)
-    if(i<2)
-        T = eye(3);
-    else
-        T = tforms{P(i-1)}.T*allH{P(i),P(i-1)};
-    end
+% for i=1:numel(P)
+%     if(i<2)
+%         T = eye(3);
+%     else
+%         T = tforms{P(i-1)}.T*allH{P(i),P(i-1)};
+%     end
+%     tforms{P(i)} = projective2d(T);
+% end
+tforms = cell(imageCount,1);
+tforms{P(centerIdx)} = projective2d(eye(3));
+for i=centerIdx-1:-1:1
+    T = tforms{P(i+1)}.T*allH{P(i),P(i+1)};
+    tforms{P(i)} = projective2d(T);
+end
+for i=centerIdx+1:numel(P)
+    T = tforms{P(i-1)}.T*allH{P(i),P(i+1)};
     tforms{P(i)} = projective2d(T);
 end
 
@@ -113,27 +123,23 @@ pcx = 0; % center of prev image
 pcy = 0; 
 
 % Create the panorama.
-I_ref = imread(imagePaths{P(1)});
+% I_ref = imread(imagePaths{P(1)});
 for i = 1:imageCount
     I = imread(imagePaths{P(i)});
-    if(i~=1)
-        I = imhistmatch(I,I_ref);
-    end
+%     if(i~=1)
+%         I = imhistmatch(I,I_ref);
+%     end
     I = single(imresize(I,0.5));  
     % Transform I into the panorama.
     warpedImage = imwarp(I, tforms{P(i)}, 'OutputView', panoramaView);
     BW = warpedImage(:,:,1)>0;
-    s = regionprops(BW,'centroid');
-    centroids = cat(1, s.Centroid);
-    cx = centroids(1,1)
-    cy = centroids(1,2)
-    [ccx,ccy] = transformPointsForward(tforms{P(i)},height/2,height/2)
+    [ccy,ccx] = transformPointsForward(tforms{P(i)},width/2,height/2);
     if(pcx==0 && pcy==0)
         BW(:,:) = 1;
     else
         for x=1:size(BW,1)
             for y=1:size(BW,2)
-                d1 = (x-cx)^2 + (y-cy)^2;
+                d1 = (x-ccx)^2 + (y-ccy)^2;
                 d2 = (x-pcx)^2 + (y-pcy)^2;
                 if(d2<d1 && panorama(x,y)~=0)
                     BW(x,y) = 0;
@@ -141,8 +147,16 @@ for i = 1:imageCount
             end
         end
     end
-    pcx = cx;
-    pcy = cy;
+    sigma = 0.5;
+    hsize = 2*round(3*sigma)+1;
+    H = fspecial('gaussian',[hsize hsize],sigma);
+    BW = single(BW);
+    BW = imfilter(BW,H,'same');
+    minBW = min(min(BW));
+    maxBW = max(max(BW));
+    BW = (BW-minBW)/(maxBW-minBW);
+    pcx = ccx;
+    pcy = ccy;
     % Overlay the warpedImage onto the panorama.
 %     panorama = step(blender, panorama, warpedImage, mask);
     panorama(:,:,1) = BW.*warpedImage(:,:,1) + (1-BW).*panorama(:,:,1);

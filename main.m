@@ -44,31 +44,24 @@ for i=1:imageCount
     end
 end
 
-[P,d] = randomBestPath(E,5000);
+[P,d, centerIdx] = randomBestPath(E,5000);
 
 
 
 %% Section 3 - Calculate Image Transformations
-for i=1:numel(P)
-    if(i<2)
-        T = eye(3);
-    else
-        T = tforms{P(i-1)}.T*allH{P(i),P(i-1)};
-    end
+
+tforms = cell(imageCount,1);
+tforms{P(centerIdx)} = projective2d(eye(3));
+for i=centerIdx-1:-1:1
+    T = tforms{P(i+1)}.T*allH{P(i),P(i+1)};
+    tforms{P(i)} = projective2d(T);
+end
+for i=centerIdx+1:numel(P)
+    T = tforms{P(i-1)}.T*allH{P(i),P(i-1)};
     tforms{P(i)} = projective2d(T);
 end
 
 imageSize = size(images{1});  % assume all the images are same size
-
-centerIdx = floor((numel(tforms)/2)) + 1;
-
-centerImageIdx = P(centerIdx);
-
-Tinv = invert(tforms{centerImageIdx});
-
-for i = 1:numel(tforms)    
-    tforms{P(i)}.T = Tinv.T * tforms{P(i)}.T;
-end
 
 % Now, create an initial, empty, panorama into which all the images are
 % mapped. 
@@ -98,11 +91,6 @@ height = round(yMax - yMin);
 % Initialize the "empty" panorama.
 panorama = zeros([height width 3], 'like', images{1});
 
-% Use |imwarp| to map images into the panorama and use
-% |vision.AlphaBlender| to overlay the images together.
-
-blender = vision.AlphaBlender('Operation', 'Binary mask', ...
-    'MaskSource', 'Input port');  
 
 % Create a 2-D spatial reference object defining the size of the panorama.
 xLimits = [xMin xMax];
@@ -113,12 +101,8 @@ pcx = 0; % center of prev image
 pcy = 0; 
 
 % Create the panorama.
-% I_ref = imread(imagePaths{P(1)});
 for i = 1:imageCount
     I = imread(imagePaths{P(i)});
-%     if(i~=1)
-%         I = imhistmatch(I,I_ref);
-%     end
     I = single(imresize(I,0.5));  
     % Transform I into the panorama.
     warpedImage = imwarp(I, tforms{P(i)}, 'OutputView', panoramaView);
@@ -137,18 +121,9 @@ for i = 1:imageCount
             end
         end
     end
-    sigma = 0.5;
-    hsize = 2*round(3*sigma)+1;
-    H = fspecial('gaussian',[hsize hsize],sigma);
-    BW = single(BW);
-    BW = imfilter(BW,H,'same');
-    minBW = min(min(BW));
-    maxBW = max(max(BW));
-    BW = (BW-minBW)/(maxBW-minBW);
     pcx = ccx;
     pcy = ccy;
     % Overlay the warpedImage onto the panorama.
-%     panorama = step(blender, panorama, warpedImage, mask);
     panorama(:,:,1) = BW.*warpedImage(:,:,1) + (1-BW).*panorama(:,:,1);
     panorama(:,:,2) = BW.*warpedImage(:,:,2) + (1-BW).*panorama(:,:,2);
     panorama(:,:,3) = BW.*warpedImage(:,:,3) + (1-BW).*panorama(:,:,3);
